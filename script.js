@@ -283,7 +283,16 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
     bindWordClickEvents() {
         const clickableWords = document.querySelectorAll('.clickable-word');
         clickableWords.forEach(word => {
-            word.addEventListener('click', (e) => this.showWordPopup(e));
+            // Add both click and touch events for better mobile support
+            word.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showWordPopup(e);
+            });
+            
+            word.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                this.showWordPopup(e);
+            }, { passive: false });
         });
     }
 
@@ -305,21 +314,53 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
         // Show popup first to calculate its size
         popup.classList.remove('hidden');
         
-        // Position popup
-        let top = rect.bottom + window.scrollY + 10;
-        let left = rect.left + window.scrollX;
+        // Get viewport dimensions
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth;
+        const scrollTop = window.scrollY;
+        const scrollLeft = window.scrollX;
         
-        // Adjust if popup goes off-screen
+        // Get popup dimensions
         const popupRect = popup.getBoundingClientRect();
-        if (left + popupRect.width > window.innerWidth) {
-            left = window.innerWidth - popupRect.width - 10;
+        const popupHeight = popupRect.height;
+        const popupWidth = popupRect.width;
+        
+        // Calculate initial position (below the word)
+        let top = rect.bottom + scrollTop + 10;
+        let left = rect.left + scrollLeft;
+        
+        // Horizontal positioning - keep popup on screen
+        if (left + popupWidth > viewportWidth) {
+            left = viewportWidth - popupWidth - 15; // 15px margin from edge
         }
-        if (top + popupRect.height > window.innerHeight + window.scrollY) {
-            top = rect.top + window.scrollY - popupRect.height - 10;
+        if (left < 15) {
+            left = 15; // 15px margin from left edge
         }
         
-        popup.style.top = `${Math.max(0, top)}px`;
-        popup.style.left = `${Math.max(0, left)}px`;
+        // Vertical positioning - prefer above if below goes off screen
+        if (rect.bottom + popupHeight + 10 > viewportHeight) {
+            // Try positioning above the word
+            const topPosition = rect.top + scrollTop - popupHeight - 10;
+            if (topPosition >= scrollTop + 15) { // Ensure it's not above viewport
+                top = topPosition;
+            } else {
+                // If can't fit above either, position at top of viewport
+                top = scrollTop + 15;
+            }
+        }
+        
+        // Ensure popup doesn't go above viewport
+        if (top < scrollTop + 15) {
+            top = scrollTop + 15;
+        }
+        
+        // Ensure popup doesn't go below viewport
+        if (top + popupHeight > scrollTop + viewportHeight - 15) {
+            top = scrollTop + viewportHeight - popupHeight - 15;
+        }
+        
+        popup.style.top = `${top}px`;
+        popup.style.left = `${left}px`;
         
         this.currentWord = word;
     }

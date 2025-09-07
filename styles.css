@@ -180,12 +180,23 @@ header p {
     cursor: pointer;
     transition: all 0.2s ease;
     border-radius: 3px;
-    padding: 1px 2px;
+    padding: 2px 4px;
+    display: inline-block;
+    min-height: 1.2em;
+    background-color: rgba(102, 126, 234, 0.05);
+    border: 1px solid transparent;
+    margin: 1px;
 }
 
-.clickable-word:hover {
+.clickable-word:hover, .clickable-word:active {
     background-color: #fff3cd;
-    border-bottom: 2px solid #ffc107;
+    border: 1px solid #ffc107;
+    transform: translateY(-1px);
+}
+
+.clickable-word:active {
+    background-color: #ffc107;
+    color: #000;
 }
 
 .word-popup {
@@ -272,14 +283,49 @@ header p {
     
     .story-text {
         font-size: 1.1rem;
-        line-height: 1.6;
+        line-height: 1.8;
+    }
+    
+    .japanese-text {
+        font-size: 1.2rem;
+        line-height: 2.0;
+    }
+    
+    .clickable-word {
+        padding: 4px 6px;
+        margin: 2px 1px;
+        min-height: 1.5em;
+        display: inline-block;
+        -webkit-tap-highlight-color: rgba(255, 193, 7, 0.3);
+        touch-action: manipulation;
+    }
+    
+    .clickable-word:active {
+        background-color: #ffc107 !important;
+        border: 2px solid #e0a800 !important;
+        transform: scale(1.05);
     }
     
     .word-popup {
-        max-width: 280px;
-        left: 10px !important;
-        right: 10px !important;
-        width: auto !important;
+        max-width: calc(100vw - 30px);
+        min-width: 250px;
+        position: fixed;
+        z-index: 1001;
+    }
+    
+    .popup-content {
+        padding: 15px;
+        font-size: 1rem;
+    }
+    
+    .popup-header {
+        font-size: 1.1rem;
+        margin-bottom: 12px;
+    }
+    
+    .copy-btn {
+        padding: 8px 12px;
+        font-size: 0.9rem;
     }
 }
 
