@@ -180,26 +180,19 @@ If the word is conjugated, provide the dictionary form information.`,
         messages: [
           {
             role: "system",
-            content: `You are a Japanese language teacher creating study materials. Generate a Japanese story based on the user's request, along with its English translation and word definitions. 
+            content: `You are a Japanese language teacher creating study materials. Generate a Japanese story based on the user's request, along with its English translation.
 
 Your response must be a valid JSON object with this exact structure:
 {
   "japanese": "The Japanese story text here",
-  "english": "The English translation here", 
-  "wordDefinitions": {
-    "word1": {"reading": "hiragana reading", "meaning": "English meaning"},
-    "word2": {"reading": "hiragana reading", "meaning": "English meaning"}
-  }
+  "english": "The English translation here"
 }
 
 Rules:
 - The Japanese story should be appropriate for the requested JLPT level
-- Include ALL Japanese words from the story in wordDefinitions (except particles like は, が, を, に, で, と, も)
-- For each word, use the dictionary/root form (e.g., use "行く" not "行きました")
-- Include nouns, verbs, adjectives, adverbs - be comprehensive
 - Focus on useful vocabulary and grammar patterns
 - Keep stories engaging but educational
-- Ensure accurate translations and readings`,
+- Make the story substantial with rich vocabulary`,
           },
           {
             role: "user",
@@ -207,7 +200,7 @@ Rules:
           },
         ],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 1500,
       }),
     });
 
@@ -217,22 +210,14 @@ Rules:
 
     const data = await response.json();
     const content = data.choices[0].message.content;
-
+    
     try {
       const parsedContent = JSON.parse(content);
-
-      // Convert wordDefinitions object to Map
-      const wordDefinitionsMap = new Map();
-      Object.entries(parsedContent.wordDefinitions).forEach(
-        ([word, definition]) => {
-          wordDefinitionsMap.set(word, definition);
-        }
-      );
-
+      
       return {
         japanese: parsedContent.japanese,
         english: parsedContent.english,
-        wordDefinitions: wordDefinitionsMap,
+        wordDefinitions: new Map() // No predefined definitions - we'll look up dynamically
       };
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
@@ -307,53 +292,47 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
   }
 
   makeWordsClickable(text) {
-    const definedWords = Array.from(this.wordDefinitions.keys());
     let clickableText = text;
-
-    // First, make defined words clickable
-    definedWords.sort((a, b) => b.length - a.length);
-
-    definedWords.forEach((word) => {
-      const patterns = [
-        `(?!<[^>]*>)(${this.escapeRegex(word)})(?![^<]*>)`,
-        `(?!<[^>]*>)(${this.escapeRegex(word)}[ぁ-ん]{0,4})(?![^<]*>)`,
-        `(?!<[^>]*>)(${this.escapeRegex(word)}[されました]{0,4})(?![^<]*>)`
-      ];
-
-      patterns.forEach(pattern => {
-        const regex = new RegExp(pattern, "g");
-        clickableText = clickableText.replace(regex, (match, captured) => {
-          if (clickableText.includes(`data-word=`)) return match;
-          return `<span class="clickable-word" data-word="${word}" data-source="defined">${captured}</span>`;
-        });
-      });
-    });
-
-    // Then, find Japanese words that aren't already clickable
-    const japaneseWordRegex = /([ひらがなカタカナ漢字々〇〈〉《》「」『』【】〔〕〖〗〘〙〚〛一-龯]+)/g;
+    
+    // Define common particles and grammar elements to exclude
+    const particles = [
+      'は', 'が', 'を', 'に', 'で', 'と', 'も', 'の', 'から', 'まで', 'より', 'へ', 
+      'や', 'か', 'よ', 'ね', 'わ', 'さ', 'ぞ', 'ぜ', 'な', 'だ', 'である',
+      'です', 'ます', 'だっ', 'であっ', 'という', 'といった'
+    ];
+    
+    // Create a regex to find meaningful Japanese words/phrases
+    // This matches sequences of Japanese characters that aren't just particles
+    const meaningfulWordRegex = /([一-龯ひ-ゖヰ-ヷァ-ヺー]{1,})/g;
+    
     let match;
-    const potentialWords = new Set();
-
-    while ((match = japaneseWordRegex.exec(text)) !== null) {
+    const wordsToMakeClickable = new Set();
+    
+    // Find all potential Japanese words
+    while ((match = meaningfulWordRegex.exec(text)) !== null) {
       const word = match[1];
-      // Skip if too short, already defined, or is just hiragana particles
-      if (word.length > 1 && !definedWords.includes(word) && 
-          !['です', 'ます', 'した', 'ない', 'てい', 'られ'].includes(word)) {
-        potentialWords.add(word);
+      
+      // Skip if it's just a particle or too short
+      if (!particles.includes(word) && word.length >= 1) {
+        wordsToMakeClickable.add(word);
       }
     }
-
-    // Make potential words clickable for fallback lookup
-    potentialWords.forEach(word => {
-      if (!clickableText.includes(`>${word}</span>`)) {
-        const regex = new RegExp(`(?!<[^>]*>)(${this.escapeRegex(word)})(?![^<]*>)`, "g");
-        clickableText = clickableText.replace(regex, 
-          `<span class="clickable-word" data-word="${word}" data-source="fallback">${word}</span>`
-        );
-      }
+    
+    console.log(`Found ${wordsToMakeClickable.size} potential words to make clickable`);
+    
+    // Sort by length (longest first) to avoid partial replacements
+    const sortedWords = Array.from(wordsToMakeClickable).sort((a, b) => b.length - a.length);
+    
+    // Make each word clickable
+    sortedWords.forEach(word => {
+      // Only replace if not already wrapped in a span
+      const regex = new RegExp(`(?!<[^>]*>)(${this.escapeRegex(word)})(?![^<]*>)`, 'g');
+      clickableText = clickableText.replace(regex, 
+        `<span class="clickable-word" data-word="${word}" data-source="dynamic">${word}</span>`
+      );
     });
-
-    console.log(`Made ${definedWords.length} defined words + ${potentialWords.size} fallback words clickable`);
+    
+    console.log(`Made ${sortedWords.length} words clickable`);
     return clickableText.replace(/\n/g, "<br>");
   }
 
@@ -434,11 +413,10 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
 
   async showWordPopup(event) {
     const word = event.target.dataset.word;
-    const source = event.target.dataset.source;
-    let definition = this.wordDefinitions.get(word) || this.fallbackDefinitions.get(word);
+    let definition = this.fallbackDefinitions.get(word);
 
-    // If no definition and it's a fallback word, fetch it
-    if (!definition && source === 'fallback') {
+    // If no definition cached, fetch it dynamically
+    if (!definition) {
       const apiKey = this.apiKeyInput.value.trim();
       if (!apiKey) {
         alert('API key needed to look up word definitions');
@@ -447,7 +425,7 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
       
       // Show loading state
       this.popupWord.textContent = word;
-      this.popupMeaning.innerHTML = '<div>Loading definition...</div>';
+      this.popupMeaning.innerHTML = '<div>📚 Looking up definition...</div>';
       const popup = this.wordPopup;
       popup.classList.remove("hidden");
       this.positionPopup(event, popup);
@@ -535,7 +513,7 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
   }
 
   async copyToClipboard() {
-    const definition = this.wordDefinitions.get(this.currentWord);
+    const definition = this.fallbackDefinitions.get(this.currentWord);
     if (!definition) return;
 
     const textToCopy = `${this.currentWord} (${definition.reading}): ${definition.meaning}`;
@@ -573,8 +551,9 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
     }
   }
 
-  showLoading(show) {
+  showLoading(show, message = "Generating your story...") {
     if (show) {
+      this.loadingDiv.textContent = message;
       this.loadingDiv.classList.remove("hidden");
       this.storySection.classList.add("hidden");
     } else {
