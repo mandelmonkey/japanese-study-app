@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japanese Study Stories</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📖 Japanese Study Stories</h1>
+            <p>Generate stories to practice JLPT grammar and vocabulary</p>
+        </header>
+
+        <section class="prompt-section">
+            <div class="input-group">
+                <div class="api-key-group">
+                    <input type="password" id="api-key-input" placeholder="Enter your OpenAI API key">
+                    <small class="api-key-note">Your API key is stored locally and never sent anywhere except OpenAI</small>
+                </div>
+                <textarea id="prompt-input" placeholder="Enter your story prompt (e.g., 'Write a short story using JLPT N1 grammar about Rome')"></textarea>
+                <button id="generate-btn">Generate Story</button>
+            </div>
+            <div id="loading" class="hidden">Generating your story...</div>
+        </section>
+
+        <section class="story-section" id="story-section" class="hidden">
+            <div class="controls">
+                <button id="toggle-language" class="toggle-btn">Show English</button>
+            </div>
+            <div class="story-container">
+                <div id="japanese-story" class="story-text active"></div>
+                <div id="english-story" class="story-text hidden"></div>
+            </div>
+        </section>
+
+        <div id="word-popup" class="word-popup hidden">
+            <div class="popup-content">
+                <div class="popup-header">
+                    <span id="popup-word"></span>
+                    <button id="copy-btn" class="copy-btn">📋 Copy</button>
+                </div>
+                <div id="popup-meaning"></div>
+                <button id="close-popup" class="close-btn">×</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
