@@ -89,6 +89,7 @@ class JapaneseStudyApp {
       const stories = await this.callOpenAIService(prompt, apiKey);
       this.displayStories(stories);
       this.storySection.classList.remove("hidden");
+      this.toggleBtn.classList.remove("hidden");
     } catch (error) {
       console.error("Error generating story:", error);
       let errorMessage = "Error generating story. Please try again.";
@@ -470,50 +471,63 @@ In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memo
   }
 
   positionPopup(event, popup) {
-    // Get touch/click position in viewport coordinates (without scroll)
+    // For mobile scrolling issues, we need to ensure we get the right coordinates
     let touchX, touchY;
+    
     if (event.type === "touchend" && event.changedTouches) {
-      touchX = event.changedTouches[0].clientX;
-      touchY = event.changedTouches[0].clientY;
+      // Mobile touch - use pageX/pageY for consistent positioning
+      const touch = event.changedTouches[0];
+      touchX = touch.pageX;
+      touchY = touch.pageY;
+      
+      // Convert to viewport coordinates for fixed positioning
+      touchX = touchX - window.scrollX;
+      touchY = touchY - window.scrollY;
     } else {
+      // Desktop click - clientX/Y are already viewport coordinates
       touchX = event.clientX;
       touchY = event.clientY;
     }
+
+    console.log(`Touch position: ${touchX}, ${touchY}, ScrollY: ${window.scrollY}`);
 
     // Get viewport dimensions
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
 
-    // Get popup dimensions
-    const popupRect = popup.getBoundingClientRect();
-    const popupHeight = popupRect.height;
-    const popupWidth = popupRect.width;
+    // Wait a frame for popup to render and get accurate dimensions
+    requestAnimationFrame(() => {
+      const popupRect = popup.getBoundingClientRect();
+      const popupHeight = popupRect.height;
+      const popupWidth = popupRect.width;
 
-    // Calculate position relative to viewport (fixed positioning)
-    let left = touchX - popupWidth / 2; // Center horizontally on touch
-    let top = touchY - popupHeight - 15; // Show above touch point with margin
+      // Calculate position relative to viewport (fixed positioning)
+      let left = touchX - popupWidth / 2;
+      let top = touchY - popupHeight - 20; // Show above touch with more margin
 
-    // Horizontal positioning - keep popup on screen
-    if (left + popupWidth > viewportWidth - 15) {
-      left = viewportWidth - popupWidth - 15;
-    }
-    if (left < 15) {
-      left = 15;
-    }
+      // Horizontal positioning - keep popup on screen
+      if (left + popupWidth > viewportWidth - 20) {
+        left = viewportWidth - popupWidth - 20;
+      }
+      if (left < 20) {
+        left = 20;
+      }
 
-    // Vertical positioning - if above touch goes off screen, show below
-    if (top < 15) {
-      top = touchY + 15; // Show below touch point
-    }
+      // Vertical positioning - if above touch goes off screen, show below
+      if (top < 20) {
+        top = touchY + 20; // Show below touch point
+      }
 
-    // If below touch also goes off screen, position in visible area
-    if (top + popupHeight > viewportHeight - 15) {
-      top = (viewportHeight - popupHeight) / 2;
-      if (top < 15) top = 15;
-    }
+      // If below touch also goes off screen, center in viewport
+      if (top + popupHeight > viewportHeight - 20) {
+        top = Math.max(20, (viewportHeight - popupHeight) / 2);
+      }
 
-    popup.style.top = `${top}px`;
-    popup.style.left = `${left}px`;
+      popup.style.top = `${top}px`;
+      popup.style.left = `${left}px`;
+      
+      console.log(`Popup positioned at: ${left}, ${top}`);
+    });
   }
 
   hidePopup() {
