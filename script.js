@@ -1,125 +1,185 @@
 class JapaneseStudyApp {
-    constructor() {
-        this.initializeElements();
-        this.bindEvents();
-        this.currentLanguage = 'japanese';
-        this.wordDefinitions = new Map();
+  constructor() {
+    this.initializeElements();
+    this.bindEvents();
+    this.currentLanguage = "japanese";
+    this.wordDefinitions = new Map();
+    this.fallbackDefinitions = new Map(); // Cache for dynamically fetched definitions
+  }
+
+  initializeElements() {
+    this.apiKeyInput = document.getElementById("api-key-input");
+    this.promptInput = document.getElementById("prompt-input");
+    this.generateBtn = document.getElementById("generate-btn");
+    this.loadingDiv = document.getElementById("loading");
+    this.storySection = document.getElementById("story-section");
+    this.japaneseStory = document.getElementById("japanese-story");
+    this.englishStory = document.getElementById("english-story");
+    this.toggleBtn = document.getElementById("toggle-language");
+    this.wordPopup = document.getElementById("word-popup");
+    this.popupWord = document.getElementById("popup-word");
+    this.popupMeaning = document.getElementById("popup-meaning");
+    this.copyBtn = document.getElementById("copy-btn");
+    this.closePopupBtn = document.getElementById("close-popup");
+
+    // Load saved data
+    this.loadApiKey();
+    this.loadPrompt();
+  }
+
+  bindEvents() {
+    this.generateBtn.addEventListener("click", () => this.generateStory());
+    this.toggleBtn.addEventListener("click", () => this.toggleLanguage());
+    this.copyBtn.addEventListener("click", () => this.copyToClipboard());
+    this.closePopupBtn.addEventListener("click", () => this.hidePopup());
+    document.addEventListener("click", (e) => this.handleDocumentClick(e));
+
+    // Save data when changed
+    this.apiKeyInput.addEventListener("input", () => this.saveApiKey());
+    this.promptInput.addEventListener("input", () => this.savePrompt());
+
+    // Enter key to generate
+    this.promptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.ctrlKey) {
+        this.generateStory();
+      }
+    });
+  }
+
+  loadApiKey() {
+    const savedKey = localStorage.getItem("openai_api_key");
+    if (savedKey) {
+      this.apiKeyInput.value = savedKey;
+    }
+  }
+
+  saveApiKey() {
+    localStorage.setItem("openai_api_key", this.apiKeyInput.value);
+  }
+
+  loadPrompt() {
+    const savedPrompt = localStorage.getItem("story_prompt");
+    if (savedPrompt) {
+      this.promptInput.value = savedPrompt;
+    }
+  }
+
+  savePrompt() {
+    localStorage.setItem("story_prompt", this.promptInput.value);
+  }
+
+  async generateStory() {
+    const prompt = this.promptInput.value.trim();
+    const apiKey = this.apiKeyInput.value.trim();
+
+    if (!apiKey) {
+      alert("Please enter your OpenAI API key");
+      return;
     }
 
-    initializeElements() {
-        this.apiKeyInput = document.getElementById('api-key-input');
-        this.promptInput = document.getElementById('prompt-input');
-        this.generateBtn = document.getElementById('generate-btn');
-        this.loadingDiv = document.getElementById('loading');
-        this.storySection = document.getElementById('story-section');
-        this.japaneseStory = document.getElementById('japanese-story');
-        this.englishStory = document.getElementById('english-story');
-        this.toggleBtn = document.getElementById('toggle-language');
-        this.wordPopup = document.getElementById('word-popup');
-        this.popupWord = document.getElementById('popup-word');
-        this.popupMeaning = document.getElementById('popup-meaning');
-        this.copyBtn = document.getElementById('copy-btn');
-        this.closePopupBtn = document.getElementById('close-popup');
-        
-        // Load saved data
-        this.loadApiKey();
-        this.loadPrompt();
+    if (!prompt) {
+      alert("Please enter a story prompt");
+      return;
     }
 
-    bindEvents() {
-        this.generateBtn.addEventListener('click', () => this.generateStory());
-        this.toggleBtn.addEventListener('click', () => this.toggleLanguage());
-        this.copyBtn.addEventListener('click', () => this.copyToClipboard());
-        this.closePopupBtn.addEventListener('click', () => this.hidePopup());
-        document.addEventListener('click', (e) => this.handleDocumentClick(e));
-        
-        // Save data when changed
-        this.apiKeyInput.addEventListener('input', () => this.saveApiKey());
-        this.promptInput.addEventListener('input', () => this.savePrompt());
-        
-        // Enter key to generate
-        this.promptInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                this.generateStory();
-            }
-        });
+    this.showLoading(true);
+    this.generateBtn.disabled = true;
+
+    try {
+      const stories = await this.callOpenAIService(prompt, apiKey);
+      this.displayStories(stories);
+      this.storySection.classList.remove("hidden");
+    } catch (error) {
+      console.error("Error generating story:", error);
+      let errorMessage = "Error generating story. Please try again.";
+
+      if (error.message.includes("401")) {
+        errorMessage = "Invalid API key. Please check your OpenAI API key.";
+      } else if (error.message.includes("429")) {
+        errorMessage = "API rate limit exceeded. Please wait and try again.";
+      } else if (error.message.includes("network")) {
+        errorMessage = "Network error. Please check your connection.";
+      }
+
+      alert(errorMessage);
+    } finally {
+      this.showLoading(false);
+      this.generateBtn.disabled = false;
+    }
+  }
+
+  async getWordDefinition(word, apiKey) {
+    // Check if we already have it cached
+    if (this.fallbackDefinitions.has(word)) {
+      return this.fallbackDefinitions.get(word);
     }
 
-    loadApiKey() {
-        const savedKey = localStorage.getItem('openai_api_key');
-        if (savedKey) {
-            this.apiKeyInput.value = savedKey;
-        }
-    }
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are a Japanese language teacher. Provide the reading and meaning for a Japanese word.
 
-    saveApiKey() {
-        localStorage.setItem('openai_api_key', this.apiKeyInput.value);
-    }
+Your response must be a valid JSON object with this exact structure:
+{
+  "reading": "hiragana reading",
+  "meaning": "English meaning"
+}
 
-    loadPrompt() {
-        const savedPrompt = localStorage.getItem('story_prompt');
-        if (savedPrompt) {
-            this.promptInput.value = savedPrompt;
-        }
-    }
-
-    savePrompt() {
-        localStorage.setItem('story_prompt', this.promptInput.value);
-    }
-
-    async generateStory() {
-        const prompt = this.promptInput.value.trim();
-        const apiKey = this.apiKeyInput.value.trim();
-        
-        if (!apiKey) {
-            alert('Please enter your OpenAI API key');
-            return;
-        }
-        
-        if (!prompt) {
-            alert('Please enter a story prompt');
-            return;
-        }
-
-        this.showLoading(true);
-        this.generateBtn.disabled = true;
-
-        try {
-            const stories = await this.callOpenAIService(prompt, apiKey);
-            this.displayStories(stories);
-            this.storySection.classList.remove('hidden');
-        } catch (error) {
-            console.error('Error generating story:', error);
-            let errorMessage = 'Error generating story. Please try again.';
-            
-            if (error.message.includes('401')) {
-                errorMessage = 'Invalid API key. Please check your OpenAI API key.';
-            } else if (error.message.includes('429')) {
-                errorMessage = 'API rate limit exceeded. Please wait and try again.';
-            } else if (error.message.includes('network')) {
-                errorMessage = 'Network error. Please check your connection.';
-            }
-            
-            alert(errorMessage);
-        } finally {
-            this.showLoading(false);
-            this.generateBtn.disabled = false;
-        }
-    }
-
-    async callOpenAIService(prompt, apiKey) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+If the word is conjugated, provide the dictionary form information.`,
             },
-            body: JSON.stringify({
-                model: 'gpt-4o',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `You are a Japanese language teacher creating study materials. Generate a Japanese story based on the user's request, along with its English translation and word definitions. 
+            {
+              role: "user",
+              content: `What is the reading and meaning of this Japanese word: ${word}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 150,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0].message.content;
+      
+      const parsedContent = JSON.parse(content);
+      
+      // Cache the result
+      this.fallbackDefinitions.set(word, parsedContent);
+      
+      console.log(`✓ Fetched definition for "${word}":`, parsedContent);
+      return parsedContent;
+      
+    } catch (error) {
+      console.error(`Failed to get definition for "${word}":`, error);
+      return { reading: "?", meaning: "Definition unavailable" };
+    }
+  }
+
+  async callOpenAIService(prompt, apiKey) {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a Japanese language teacher creating study materials. Generate a Japanese story based on the user's request, along with its English translation and word definitions. 
 
 Your response must be a valid JSON object with this exact structure:
 {
@@ -133,50 +193,54 @@ Your response must be a valid JSON object with this exact structure:
 
 Rules:
 - The Japanese story should be appropriate for the requested JLPT level
-- Include 15-25 key vocabulary words in wordDefinitions
+- Include ALL Japanese words from the story in wordDefinitions (except particles like は, が, を, に, で, と, も)
+- For each word, use the dictionary/root form (e.g., use "行く" not "行きました")
+- Include nouns, verbs, adjectives, adverbs - be comprehensive
 - Focus on useful vocabulary and grammar patterns
 - Keep stories engaging but educational
-- Ensure accurate translations and readings`
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 2000
-            })
-        });
+- Ensure accurate translations and readings`,
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const content = data.choices[0].message.content;
-        
-        try {
-            const parsedContent = JSON.parse(content);
-            
-            // Convert wordDefinitions object to Map
-            const wordDefinitionsMap = new Map();
-            Object.entries(parsedContent.wordDefinitions).forEach(([word, definition]) => {
-                wordDefinitionsMap.set(word, definition);
-            });
-            
-            return {
-                japanese: parsedContent.japanese,
-                english: parsedContent.english,
-                wordDefinitions: wordDefinitionsMap
-            };
-        } catch (parseError) {
-            console.error('Failed to parse AI response:', parseError);
-            throw new Error('Invalid response format from AI service');
-        }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    generateMockJapaneseStory() {
-        return `昔々、ローマという美しい都市があった。その都市は古代から続く歴史と文化で有名だった。
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+
+    try {
+      const parsedContent = JSON.parse(content);
+
+      // Convert wordDefinitions object to Map
+      const wordDefinitionsMap = new Map();
+      Object.entries(parsedContent.wordDefinitions).forEach(
+        ([word, definition]) => {
+          wordDefinitionsMap.set(word, definition);
+        }
+      );
+
+      return {
+        japanese: parsedContent.japanese,
+        english: parsedContent.english,
+        wordDefinitions: wordDefinitionsMap,
+      };
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      throw new Error("Invalid response format from AI service");
+    }
+  }
+
+  generateMockJapaneseStory() {
+    return `昔々、ローマという美しい都市があった。その都市は古代から続く歴史と文化で有名だった。
 
 ある日、田中という名前の若い日本人観光客がローマを訪れた。彼は建築と歴史に非常に興味があった。コロッセオを見たとき、彼は古代ローマ帝国の偉大さに圧倒された。
 
@@ -185,10 +249,10 @@ Rules:
 その後、彼はバチカン市国を訪れた。システィーナ礼拝堂のミケランジェロの天井画を見上げたとき、芸術の美しさに感動で涙が出そうになった。
 
 夕方になると、田中はトレビの泉のそばに座って、一日の思い出を振り返った。「この旅行は一生忘れられないだろう」と彼は心から思った。`;
-    }
+  }
 
-    generateMockEnglishStory() {
-        return `Long ago, there was a beautiful city called Rome. This city was famous for its history and culture that continued from ancient times.
+  generateMockEnglishStory() {
+    return `Long ago, there was a beautiful city called Rome. This city was famous for its history and culture that continued from ancient times.
 
 One day, a young Japanese tourist named Tanaka visited Rome. He was very interested in architecture and history. When he saw the Colosseum, he was overwhelmed by the greatness of the ancient Roman Empire.
 
@@ -197,226 +261,315 @@ One day, a young Japanese tourist named Tanaka visited Rome. He was very interes
 Afterwards, he visited Vatican City. When he looked up at Michelangelo's ceiling paintings in the Sistine Chapel, he was so moved by the beauty of art that he almost cried.
 
 In the evening, Tanaka sat by the Trevi Fountain and reflected on the day's memories. "I will never forget this trip," he thought from the bottom of his heart.`;
-    }
+  }
 
-    generateMockWordDefinitions() {
-        return new Map([
-            ['昔々', { reading: 'むかしむかし', meaning: 'long ago, once upon a time' }],
-            ['美しい', { reading: 'うつくしい', meaning: 'beautiful' }],
-            ['都市', { reading: 'とし', meaning: 'city' }],
-            ['古代', { reading: 'こだい', meaning: 'ancient times' }],
-            ['文化', { reading: 'ぶんか', meaning: 'culture' }],
-            ['有名', { reading: 'ゆうめい', meaning: 'famous' }],
-            ['観光客', { reading: 'かんこうきゃく', meaning: 'tourist' }],
-            ['建築', { reading: 'けんちく', meaning: 'architecture' }],
-            ['歴史', { reading: 'れきし', meaning: 'history' }],
-            ['興味', { reading: 'きょうみ', meaning: 'interest' }],
-            ['圧倒', { reading: 'あっとう', meaning: 'to overwhelm' }],
-            ['壮大', { reading: 'そうだい', meaning: 'magnificent, grand' }],
-            ['建物', { reading: 'たてもの', meaning: 'building' }],
-            ['帝国', { reading: 'ていこく', meaning: 'empire' }],
-            ['偉大', { reading: 'いだい', meaning: 'great' }],
-            ['想像', { reading: 'そうぞう', meaning: 'imagination' }],
-            ['興奮', { reading: 'こうふん', meaning: 'excitement' }],
-            ['天井画', { reading: 'てんじょうが', meaning: 'ceiling painting' }],
-            ['芸術', { reading: 'げいじゅつ', meaning: 'art' }],
-            ['感動', { reading: 'かんどう', meaning: 'emotion, impression' }],
-            ['思い出', { reading: 'おもいで', meaning: 'memories' }],
-            ['振り返る', { reading: 'ふりかえる', meaning: 'to look back, reflect' }],
-            ['一生', { reading: 'いっしょう', meaning: 'whole life, lifetime' }],
-            ['忘れられない', { reading: 'わすれられない', meaning: 'unforgettable' }]
-        ]);
-    }
+  generateMockWordDefinitions() {
+    return new Map([
+      [
+        "昔々",
+        { reading: "むかしむかし", meaning: "long ago, once upon a time" },
+      ],
+      ["美しい", { reading: "うつくしい", meaning: "beautiful" }],
+      ["都市", { reading: "とし", meaning: "city" }],
+      ["古代", { reading: "こだい", meaning: "ancient times" }],
+      ["文化", { reading: "ぶんか", meaning: "culture" }],
+      ["有名", { reading: "ゆうめい", meaning: "famous" }],
+      ["観光客", { reading: "かんこうきゃく", meaning: "tourist" }],
+      ["建築", { reading: "けんちく", meaning: "architecture" }],
+      ["歴史", { reading: "れきし", meaning: "history" }],
+      ["興味", { reading: "きょうみ", meaning: "interest" }],
+      ["圧倒", { reading: "あっとう", meaning: "to overwhelm" }],
+      ["壮大", { reading: "そうだい", meaning: "magnificent, grand" }],
+      ["建物", { reading: "たてもの", meaning: "building" }],
+      ["帝国", { reading: "ていこく", meaning: "empire" }],
+      ["偉大", { reading: "いだい", meaning: "great" }],
+      ["想像", { reading: "そうぞう", meaning: "imagination" }],
+      ["興奮", { reading: "こうふん", meaning: "excitement" }],
+      ["天井画", { reading: "てんじょうが", meaning: "ceiling painting" }],
+      ["芸術", { reading: "げいじゅつ", meaning: "art" }],
+      ["感動", { reading: "かんどう", meaning: "emotion, impression" }],
+      ["思い出", { reading: "おもいで", meaning: "memories" }],
+      ["振り返る", { reading: "ふりかえる", meaning: "to look back, reflect" }],
+      ["一生", { reading: "いっしょう", meaning: "whole life, lifetime" }],
+      ["忘れられない", { reading: "わすれられない", meaning: "unforgettable" }],
+    ]);
+  }
 
-    displayStories(stories) {
-        this.wordDefinitions = stories.wordDefinitions;
-        this.japaneseStory.innerHTML = this.makeWordsClickable(stories.japanese);
-        this.englishStory.innerHTML = stories.english.replace(/\n/g, '<br>');
-        this.japaneseStory.classList.add('japanese-text');
-        
-        this.currentLanguage = 'japanese';
-        this.updateLanguageDisplay();
-    }
+  displayStories(stories) {
+    this.wordDefinitions = stories.wordDefinitions;
+    this.japaneseStory.innerHTML = this.makeWordsClickable(stories.japanese);
+    this.englishStory.innerHTML = stories.english.replace(/\n/g, "<br>");
+    this.japaneseStory.classList.add("japanese-text");
 
-    makeWordsClickable(text) {
-        const words = Array.from(this.wordDefinitions.keys());
-        let clickableText = text;
-        
-        // Sort by length (longest first) to avoid partial matches
-        words.sort((a, b) => b.length - a.length);
-        
-        words.forEach(word => {
-            const regex = new RegExp(`(${this.escapeRegex(word)})`, 'g');
-            clickableText = clickableText.replace(regex, 
-                `<span class="clickable-word" data-word="${word}">$1</span>`);
+    this.currentLanguage = "japanese";
+    this.updateLanguageDisplay();
+  }
+
+  makeWordsClickable(text) {
+    const definedWords = Array.from(this.wordDefinitions.keys());
+    let clickableText = text;
+
+    // First, make defined words clickable
+    definedWords.sort((a, b) => b.length - a.length);
+
+    definedWords.forEach((word) => {
+      const patterns = [
+        `(?!<[^>]*>)(${this.escapeRegex(word)})(?![^<]*>)`,
+        `(?!<[^>]*>)(${this.escapeRegex(word)}[ぁ-ん]{0,4})(?![^<]*>)`,
+        `(?!<[^>]*>)(${this.escapeRegex(word)}[されました]{0,4})(?![^<]*>)`
+      ];
+
+      patterns.forEach(pattern => {
+        const regex = new RegExp(pattern, "g");
+        clickableText = clickableText.replace(regex, (match, captured) => {
+          if (clickableText.includes(`data-word=`)) return match;
+          return `<span class="clickable-word" data-word="${word}" data-source="defined">${captured}</span>`;
         });
-        
-        return clickableText.replace(/\n/g, '<br>');
+      });
+    });
+
+    // Then, find Japanese words that aren't already clickable
+    const japaneseWordRegex = /([ひらがなカタカナ漢字々〇〈〉《》「」『』【】〔〕〖〗〘〙〚〛一-龯]+)/g;
+    let match;
+    const potentialWords = new Set();
+
+    while ((match = japaneseWordRegex.exec(text)) !== null) {
+      const word = match[1];
+      // Skip if too short, already defined, or is just hiragana particles
+      if (word.length > 1 && !definedWords.includes(word) && 
+          !['です', 'ます', 'した', 'ない', 'てい', 'られ'].includes(word)) {
+        potentialWords.add(word);
+      }
     }
 
-    escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Make potential words clickable for fallback lookup
+    potentialWords.forEach(word => {
+      if (!clickableText.includes(`>${word}</span>`)) {
+        const regex = new RegExp(`(?!<[^>]*>)(${this.escapeRegex(word)})(?![^<]*>)`, "g");
+        clickableText = clickableText.replace(regex, 
+          `<span class="clickable-word" data-word="${word}" data-source="fallback">${word}</span>`
+        );
+      }
+    });
+
+    console.log(`Made ${definedWords.length} defined words + ${potentialWords.size} fallback words clickable`);
+    return clickableText.replace(/\n/g, "<br>");
+  }
+
+  escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  toggleLanguage() {
+    if (this.currentLanguage === "japanese") {
+      this.currentLanguage = "english";
+    } else {
+      this.currentLanguage = "japanese";
+    }
+    this.updateLanguageDisplay();
+  }
+
+  updateLanguageDisplay() {
+    if (this.currentLanguage === "japanese") {
+      this.japaneseStory.classList.remove("hidden");
+      this.englishStory.classList.add("hidden");
+      this.toggleBtn.textContent = "Show English";
+      this.bindWordClickEvents();
+    } else {
+      this.japaneseStory.classList.add("hidden");
+      this.englishStory.classList.remove("hidden");
+      this.toggleBtn.textContent = "Show Japanese";
+    }
+  }
+
+  bindWordClickEvents() {
+    // Remove existing event listeners to avoid duplicates
+    const existingWords = document.querySelectorAll(".clickable-word");
+    existingWords.forEach((word) => {
+      word.replaceWith(word.cloneNode(true));
+    });
+
+    // Add event listeners to all clickable words
+    const clickableWords = document.querySelectorAll(".clickable-word");
+    console.log(`Found ${clickableWords.length} clickable words`); // Debug log
+
+    clickableWords.forEach((word, index) => {
+      // Add multiple event types for maximum compatibility
+      word.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log(`Clicked word: ${word.dataset.word}`); // Debug log
+        this.showWordPopup(e);
+      });
+
+      word.addEventListener(
+        "touchstart",
+        (e) => {
+          // Visual feedback on touch
+          word.style.backgroundColor = "#ffc107";
+        },
+        { passive: true }
+      );
+
+      word.addEventListener(
+        "touchend",
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // Reset visual feedback
+          word.style.backgroundColor = "";
+          console.log(`Touched word: ${word.dataset.word}`); // Debug log
+          this.showWordPopup(e);
+        },
+        { passive: false }
+      );
+
+      word.addEventListener("touchcancel", (e) => {
+        // Reset visual feedback if touch is cancelled
+        word.style.backgroundColor = "";
+      });
+    });
+  }
+
+  async showWordPopup(event) {
+    const word = event.target.dataset.word;
+    const source = event.target.dataset.source;
+    let definition = this.wordDefinitions.get(word) || this.fallbackDefinitions.get(word);
+
+    // If no definition and it's a fallback word, fetch it
+    if (!definition && source === 'fallback') {
+      const apiKey = this.apiKeyInput.value.trim();
+      if (!apiKey) {
+        alert('API key needed to look up word definitions');
+        return;
+      }
+      
+      // Show loading state
+      this.popupWord.textContent = word;
+      this.popupMeaning.innerHTML = '<div>Loading definition...</div>';
+      const popup = this.wordPopup;
+      popup.classList.remove("hidden");
+      this.positionPopup(event, popup);
+      
+      // Fetch definition
+      definition = await this.getWordDefinition(word, apiKey);
     }
 
-    toggleLanguage() {
-        if (this.currentLanguage === 'japanese') {
-            this.currentLanguage = 'english';
-        } else {
-            this.currentLanguage = 'japanese';
-        }
-        this.updateLanguageDisplay();
-    }
+    if (!definition) return;
 
-    updateLanguageDisplay() {
-        if (this.currentLanguage === 'japanese') {
-            this.japaneseStory.classList.remove('hidden');
-            this.englishStory.classList.add('hidden');
-            this.toggleBtn.textContent = 'Show English';
-            this.bindWordClickEvents();
-        } else {
-            this.japaneseStory.classList.add('hidden');
-            this.englishStory.classList.remove('hidden');
-            this.toggleBtn.textContent = 'Show Japanese';
-        }
-    }
-
-    bindWordClickEvents() {
-        const clickableWords = document.querySelectorAll('.clickable-word');
-        clickableWords.forEach(word => {
-            // Add both click and touch events for better mobile support
-            word.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showWordPopup(e);
-            });
-            
-            word.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                this.showWordPopup(e);
-            }, { passive: false });
-        });
-    }
-
-    showWordPopup(event) {
-        const word = event.target.dataset.word;
-        const definition = this.wordDefinitions.get(word);
-        
-        if (!definition) return;
-
-        this.popupWord.textContent = word;
-        this.popupMeaning.innerHTML = `
+    this.popupWord.textContent = word;
+    this.popupMeaning.innerHTML = `
             <div><strong>Reading:</strong> ${definition.reading}</div>
             <div><strong>Meaning:</strong> ${definition.meaning}</div>
         `;
 
-        const rect = event.target.getBoundingClientRect();
-        const popup = this.wordPopup;
-        
-        // Show popup first to calculate its size
-        popup.classList.remove('hidden');
-        
-        // Get viewport dimensions
-        const viewportHeight = window.innerHeight;
-        const viewportWidth = window.innerWidth;
-        const scrollTop = window.scrollY;
-        const scrollLeft = window.scrollX;
-        
-        // Get popup dimensions
-        const popupRect = popup.getBoundingClientRect();
-        const popupHeight = popupRect.height;
-        const popupWidth = popupRect.width;
-        
-        // Calculate initial position (below the word)
-        let top = rect.bottom + scrollTop + 10;
-        let left = rect.left + scrollLeft;
-        
-        // Horizontal positioning - keep popup on screen
-        if (left + popupWidth > viewportWidth) {
-            left = viewportWidth - popupWidth - 15; // 15px margin from edge
-        }
-        if (left < 15) {
-            left = 15; // 15px margin from left edge
-        }
-        
-        // Vertical positioning - prefer above if below goes off screen
-        if (rect.bottom + popupHeight + 10 > viewportHeight) {
-            // Try positioning above the word
-            const topPosition = rect.top + scrollTop - popupHeight - 10;
-            if (topPosition >= scrollTop + 15) { // Ensure it's not above viewport
-                top = topPosition;
-            } else {
-                // If can't fit above either, position at top of viewport
-                top = scrollTop + 15;
-            }
-        }
-        
-        // Ensure popup doesn't go above viewport
-        if (top < scrollTop + 15) {
-            top = scrollTop + 15;
-        }
-        
-        // Ensure popup doesn't go below viewport
-        if (top + popupHeight > scrollTop + viewportHeight - 15) {
-            top = scrollTop + viewportHeight - popupHeight - 15;
-        }
-        
-        popup.style.top = `${top}px`;
-        popup.style.left = `${left}px`;
-        
-        this.currentWord = word;
+    const popup = this.wordPopup;
+    popup.classList.remove("hidden");
+    this.positionPopup(event, popup);
+    this.currentWord = word;
+  }
+
+  positionPopup(event, popup) {
+    // Get touch/click position in viewport coordinates (without scroll)
+    let touchX, touchY;
+    if (event.type === "touchend" && event.changedTouches) {
+      touchX = event.changedTouches[0].clientX;
+      touchY = event.changedTouches[0].clientY;
+    } else {
+      touchX = event.clientX;
+      touchY = event.clientY;
     }
 
-    hidePopup() {
-        this.wordPopup.classList.add('hidden');
+    // Get viewport dimensions
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Get popup dimensions
+    const popupRect = popup.getBoundingClientRect();
+    const popupHeight = popupRect.height;
+    const popupWidth = popupRect.width;
+
+    // Calculate position relative to viewport (fixed positioning)
+    let left = touchX - popupWidth / 2; // Center horizontally on touch
+    let top = touchY - popupHeight - 15; // Show above touch point with margin
+
+    // Horizontal positioning - keep popup on screen
+    if (left + popupWidth > viewportWidth - 15) {
+      left = viewportWidth - popupWidth - 15;
+    }
+    if (left < 15) {
+      left = 15;
     }
 
-    async copyToClipboard() {
-        const definition = this.wordDefinitions.get(this.currentWord);
-        if (!definition) return;
-
-        const textToCopy = `${this.currentWord} (${definition.reading}): ${definition.meaning}`;
-        
-        try {
-            await navigator.clipboard.writeText(textToCopy);
-            
-            // Visual feedback
-            const originalText = this.copyBtn.textContent;
-            this.copyBtn.textContent = '✓ Copied!';
-            this.copyBtn.style.background = '#28a745';
-            
-            setTimeout(() => {
-                this.copyBtn.textContent = originalText;
-                this.copyBtn.style.background = '#28a745';
-            }, 1500);
-        } catch (err) {
-            console.error('Failed to copy: ', err);
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = textToCopy;
-            document.body.appendChild(textArea);
-            textArea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textArea);
-        }
+    // Vertical positioning - if above touch goes off screen, show below
+    if (top < 15) {
+      top = touchY + 15; // Show below touch point
     }
 
-    handleDocumentClick(event) {
-        if (!this.wordPopup.contains(event.target) && 
-            !event.target.classList.contains('clickable-word')) {
-            this.hidePopup();
-        }
+    // If below touch also goes off screen, position in visible area
+    if (top + popupHeight > viewportHeight - 15) {
+      top = (viewportHeight - popupHeight) / 2;
+      if (top < 15) top = 15;
     }
 
-    showLoading(show) {
-        if (show) {
-            this.loadingDiv.classList.remove('hidden');
-            this.storySection.classList.add('hidden');
-        } else {
-            this.loadingDiv.classList.add('hidden');
-        }
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+  }
+
+  hidePopup() {
+    this.wordPopup.classList.add("hidden");
+  }
+
+  async copyToClipboard() {
+    const definition = this.wordDefinitions.get(this.currentWord);
+    if (!definition) return;
+
+    const textToCopy = `${this.currentWord} (${definition.reading}): ${definition.meaning}`;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+
+      // Visual feedback
+      const originalText = this.copyBtn.textContent;
+      this.copyBtn.textContent = "✓ Copied!";
+      this.copyBtn.style.background = "#28a745";
+
+      setTimeout(() => {
+        this.copyBtn.textContent = originalText;
+        this.copyBtn.style.background = "#28a745";
+      }, 1500);
+    } catch (err) {
+      console.error("Failed to copy: ", err);
+      // Fallback for older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = textToCopy;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
     }
+  }
+
+  handleDocumentClick(event) {
+    if (
+      !this.wordPopup.contains(event.target) &&
+      !event.target.classList.contains("clickable-word")
+    ) {
+      this.hidePopup();
+    }
+  }
+
+  showLoading(show) {
+    if (show) {
+      this.loadingDiv.classList.remove("hidden");
+      this.storySection.classList.add("hidden");
+    } else {
+      this.loadingDiv.classList.add("hidden");
+    }
+  }
 }
 
 // Initialize the app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    new JapaneseStudyApp();
+document.addEventListener("DOMContentLoaded", () => {
+  new JapaneseStudyApp();
 });
