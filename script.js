@@ -11,6 +11,7 @@ class JapaneseStudyApp {
     this.apiKeyInput = document.getElementById("api-key-input");
     this.promptInput = document.getElementById("prompt-input");
     this.generateBtn = document.getElementById("generate-btn");
+    this.loadArticleBtn = document.getElementById("load-article-btn");
     this.loadingDiv = document.getElementById("loading");
     this.storySection = document.getElementById("story-section");
     this.japaneseStory = document.getElementById("japanese-story");
@@ -29,6 +30,7 @@ class JapaneseStudyApp {
 
   bindEvents() {
     this.generateBtn.addEventListener("click", () => this.generateStory());
+    this.loadArticleBtn.addEventListener("click", () => this.loadRandomArticle());
     this.toggleBtn.addEventListener("click", () => this.toggleLanguage());
     this.copyBtn.addEventListener("click", () => this.copyToClipboard());
     this.closePopupBtn.addEventListener("click", () => this.hidePopup());
@@ -106,6 +108,114 @@ class JapaneseStudyApp {
     } finally {
       this.showLoading(false);
       this.generateBtn.disabled = false;
+    }
+  }
+
+  async loadRandomArticle() {
+    const apiKey = this.apiKeyInput.value.trim();
+
+    if (!apiKey) {
+      alert("Please enter your OpenAI API key (needed for translations and word definitions)");
+      return;
+    }
+
+    this.showLoading(true, "Loading Japanese news article...");
+    this.loadArticleBtn.disabled = true;
+
+    try {
+      // Fetch articles from gnews.io
+      const gnewsApiKey = "1f9085c99be0f7d69c80bb8a290e600b";
+      const response = await fetch(
+        `https://gnews.io/api/v4/top-headlines?country=jp&lang=ja&apikey=${gnewsApiKey}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.articles || data.articles.length === 0) {
+        throw new Error("No articles found");
+      }
+
+      // Pick a random article
+      const randomArticle = data.articles[Math.floor(Math.random() * data.articles.length)];
+
+      // Clean up the content - remove truncation indicators like "... [568 chars]"
+      let cleanContent = randomArticle.content || "";
+      cleanContent = cleanContent.replace(/\.\.\.\s*\[\d+\s*chars?\]$/i, "...");
+
+      // Build Japanese text with source link
+      const japaneseText = `${randomArticle.title}\n\n${randomArticle.description || ""}\n\n${cleanContent}\n\n---\n出典: ${randomArticle.source.name}\n記事全文: ${randomArticle.url}`;
+
+      // Translate to English using OpenAI
+      this.showLoading(true, "Translating article to English...");
+      const englishTranslation = await this.translateArticle(japaneseText, apiKey);
+
+      // Create story object with article content
+      const stories = {
+        japanese: japaneseText,
+        english: englishTranslation,
+        wordDefinitions: new Map()
+      };
+
+      this.displayStories(stories);
+      this.storySection.classList.remove("hidden");
+      this.toggleBtn.classList.remove("hidden");
+    } catch (error) {
+      console.error("Error loading article:", error);
+      let errorMessage = "Error loading article. Please try again.";
+
+      if (error.message.includes("403")) {
+        errorMessage = "API access denied. The gnews.io API key may be invalid.";
+      } else if (error.message.includes("429")) {
+        errorMessage = "API rate limit exceeded. Please wait and try again.";
+      } else if (error.message.includes("network")) {
+        errorMessage = "Network error. Please check your connection.";
+      }
+
+      alert(errorMessage);
+    } finally {
+      this.showLoading(false);
+      this.loadArticleBtn.disabled = false;
+    }
+  }
+
+  async translateArticle(japaneseText, apiKey) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a professional translator. Translate the following Japanese news article to natural, fluent English. Maintain the paragraph structure and formatting.",
+            },
+            {
+              role: "user",
+              content: japaneseText,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 2000,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.choices[0].message.content;
+    } catch (error) {
+      console.error("Translation error:", error);
+      return "Translation unavailable. Please check your API key and try again.";
     }
   }
 
