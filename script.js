@@ -12,6 +12,10 @@ class JapaneseStudyApp {
     this.promptInput = document.getElementById("prompt-input");
     this.generateBtn = document.getElementById("generate-btn");
     this.loadArticleBtn = document.getElementById("load-article-btn");
+    this.urlInput = document.getElementById("url-input");
+    this.loadUrlBtn = document.getElementById("load-url-btn");
+    this.articleTextInput = document.getElementById("article-text-input");
+    this.loadTextBtn = document.getElementById("load-text-btn");
     this.loadingDiv = document.getElementById("loading");
     this.storySection = document.getElementById("story-section");
     this.japaneseStory = document.getElementById("japanese-story");
@@ -31,6 +35,8 @@ class JapaneseStudyApp {
   bindEvents() {
     this.generateBtn.addEventListener("click", () => this.generateStory());
     this.loadArticleBtn.addEventListener("click", () => this.loadRandomArticle());
+    this.loadUrlBtn.addEventListener("click", () => this.loadFromUrl());
+    this.loadTextBtn.addEventListener("click", () => this.loadFromText());
     this.toggleBtn.addEventListener("click", () => this.toggleLanguage());
     this.copyBtn.addEventListener("click", () => this.copyToClipboard());
     this.closePopupBtn.addEventListener("click", () => this.hidePopup());
@@ -151,7 +157,7 @@ class JapaneseStudyApp {
 
       // Translate to English using OpenAI
       this.showLoading(true, "Translating article to English...");
-      const englishTranslation = await this.translateArticle(japaneseText, apiKey);
+      const englishTranslation = await this.translateArticle(japaneseText, apiKey, "ja-to-en");
 
       // Create story object with article content
       const stories = {
@@ -182,8 +188,12 @@ class JapaneseStudyApp {
     }
   }
 
-  async translateArticle(japaneseText, apiKey) {
+  async translateArticle(text, apiKey, direction = "ja-to-en") {
     try {
+      const systemPrompt = direction === "ja-to-en"
+        ? "You are a professional translator. Translate the following Japanese news article to natural, fluent English. Maintain the paragraph structure and formatting."
+        : "You are a professional translator. Translate the following English news article to natural, fluent Japanese. Maintain the paragraph structure and formatting.";
+
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -195,11 +205,11 @@ class JapaneseStudyApp {
           messages: [
             {
               role: "system",
-              content: "You are a professional translator. Translate the following Japanese news article to natural, fluent English. Maintain the paragraph structure and formatting.",
+              content: systemPrompt,
             },
             {
               role: "user",
-              content: japaneseText,
+              content: text,
             },
           ],
           temperature: 0.3,
@@ -216,6 +226,184 @@ class JapaneseStudyApp {
     } catch (error) {
       console.error("Translation error:", error);
       return "Translation unavailable. Please check your API key and try again.";
+    }
+  }
+
+  detectLanguage(text) {
+    // Check if text contains Japanese characters (Hiragana, Katakana, or Kanji)
+    const japaneseRegex = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/;
+    return japaneseRegex.test(text) ? "japanese" : "english";
+  }
+
+  async loadFromUrl() {
+    const url = this.urlInput.value.trim();
+    const apiKey = this.apiKeyInput.value.trim();
+
+    if (!apiKey) {
+      alert("Please enter your OpenAI API key (needed for translations and word definitions)");
+      return;
+    }
+
+    if (!url) {
+      alert("Please enter a URL");
+      return;
+    }
+
+    this.showLoading(true, "Fetching article from URL...");
+    this.loadUrlBtn.disabled = true;
+
+    try {
+      // Use a CORS proxy to fetch the content
+      const corsProxy = "https://corsproxy.io/?";
+      const response = await fetch(corsProxy + encodeURIComponent(url), {
+        headers: {
+          'Accept': 'text/html'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+
+      // Parse HTML and extract text content
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+
+      // Try to find article content - look for common article tags
+      let articleContent = "";
+      const articleElement = doc.querySelector("article") ||
+                           doc.querySelector("main") ||
+                           doc.querySelector(".article-body") ||
+                           doc.querySelector(".content") ||
+                           doc.querySelector("#content");
+
+      if (articleElement) {
+        // Remove script and style tags
+        articleElement.querySelectorAll("script, style, nav, footer, header").forEach(el => el.remove());
+        articleContent = articleElement.textContent;
+      } else {
+        // Fallback to body content
+        const body = doc.querySelector("body");
+        if (body) {
+          body.querySelectorAll("script, style, nav, footer, header").forEach(el => el.remove());
+          articleContent = body.textContent;
+        }
+      }
+
+      // Clean up the text
+      articleContent = articleContent
+        .replace(/\s+/g, " ")  // Replace multiple spaces with single space
+        .replace(/\n\s*\n/g, "\n\n")  // Clean up line breaks
+        .trim();
+
+      if (!articleContent || articleContent.length < 100) {
+        throw new Error("Could not extract article content from URL");
+      }
+
+      // Detect language
+      const language = this.detectLanguage(articleContent);
+      console.log(`Detected language: ${language}`);
+
+      let japaneseText, englishText;
+
+      if (language === "japanese") {
+        // Japanese article - translate to English
+        this.showLoading(true, "Translating Japanese article to English...");
+        japaneseText = articleContent;
+        englishText = await this.translateArticle(articleContent, apiKey, "ja-to-en");
+      } else {
+        // English article - translate to Japanese
+        this.showLoading(true, "Translating English article to Japanese...");
+        englishText = articleContent;
+        japaneseText = await this.translateArticle(articleContent, apiKey, "en-to-ja");
+      }
+
+      // Create story object
+      const stories = {
+        japanese: japaneseText + `\n\n---\n出典: ${url}`,
+        english: englishText + `\n\n---\nSource: ${url}`,
+        wordDefinitions: new Map()
+      };
+
+      this.displayStories(stories);
+      this.storySection.classList.remove("hidden");
+      this.toggleBtn.classList.remove("hidden");
+    } catch (error) {
+      console.error("Error loading URL:", error);
+      let errorMessage = "Error loading article from URL. Please try again.";
+
+      if (error.message.includes("Could not extract")) {
+        errorMessage = "Could not extract article content. The page structure may not be supported.";
+      } else if (error.message.includes("Failed to fetch")) {
+        errorMessage = "Could not fetch the URL. Please check the URL and try again.";
+      }
+
+      alert(errorMessage);
+    } finally {
+      this.showLoading(false);
+      this.loadUrlBtn.disabled = false;
+    }
+  }
+
+  async loadFromText() {
+    const articleText = this.articleTextInput.value.trim();
+    const apiKey = this.apiKeyInput.value.trim();
+
+    if (!apiKey) {
+      alert("Please enter your OpenAI API key (needed for translations and word definitions)");
+      return;
+    }
+
+    if (!articleText) {
+      alert("Please paste article text");
+      return;
+    }
+
+    if (articleText.length < 50) {
+      alert("Article text seems too short. Please paste a longer article.");
+      return;
+    }
+
+    this.showLoading(true, "Processing article text...");
+    this.loadTextBtn.disabled = true;
+
+    try {
+      // Detect language
+      const language = this.detectLanguage(articleText);
+      console.log(`Detected language: ${language}`);
+
+      let japaneseText, englishText;
+
+      if (language === "japanese") {
+        // Japanese article - translate to English
+        this.showLoading(true, "Translating Japanese article to English...");
+        japaneseText = articleText;
+        englishText = await this.translateArticle(articleText, apiKey, "ja-to-en");
+      } else {
+        // English article - translate to Japanese
+        this.showLoading(true, "Translating English article to Japanese...");
+        englishText = articleText;
+        japaneseText = await this.translateArticle(articleText, apiKey, "en-to-ja");
+      }
+
+      // Create story object
+      const stories = {
+        japanese: japaneseText,
+        english: englishText,
+        wordDefinitions: new Map()
+      };
+
+      this.displayStories(stories);
+      this.storySection.classList.remove("hidden");
+      this.toggleBtn.classList.remove("hidden");
+    } catch (error) {
+      console.error("Error processing text:", error);
+      alert("Error processing article text. Please try again.");
+    } finally {
+      this.showLoading(false);
+      this.loadTextBtn.disabled = false;
     }
   }
 
